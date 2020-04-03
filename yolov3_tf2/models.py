@@ -22,6 +22,8 @@ from tensorflow.keras.losses import (
 from .batch_norm import BatchNormalization
 from .utils import broadcast_iou
 
+flags.DEFINE_integer('yolo_max_boxes', 100,
+                     'maximum number of boxes per image')
 flags.DEFINE_float('yolo_iou_threshold', 0.5, 'iou threshold')
 flags.DEFINE_float('yolo_score_threshold', 0.5, 'score threshold')
 
@@ -190,8 +192,8 @@ def yolo_nms(outputs, anchors, masks, classes):
         boxes=tf.reshape(bbox, (tf.shape(bbox)[0], -1, 1, 4)),
         scores=tf.reshape(
             scores, (tf.shape(scores)[0], -1, tf.shape(scores)[-1])),
-        max_output_size_per_class=100,
-        max_total_size=100,
+        max_output_size_per_class=FLAGS.yolo_max_boxes,
+        max_total_size=FLAGS.yolo_max_boxes,
         iou_threshold=FLAGS.yolo_iou_threshold,
         score_threshold=FLAGS.yolo_score_threshold
     )
@@ -201,7 +203,7 @@ def yolo_nms(outputs, anchors, masks, classes):
 
 def YoloV3(size=None, channels=3, anchors=yolo_anchors,
            masks=yolo_anchor_masks, classes=80, training=False):
-    x = inputs = Input([size, size, channels])
+    x = inputs = Input([size, size, channels], name='input')
 
     x_36, x_61, x = Darknet(name='yolo_darknet')(x)
 
@@ -232,7 +234,7 @@ def YoloV3(size=None, channels=3, anchors=yolo_anchors,
 
 def YoloV3Tiny(size=None, channels=3, anchors=yolo_tiny_anchors,
                masks=yolo_tiny_anchor_masks, classes=80, training=False):
-    x = inputs = Input([size, size, channels])
+    x = inputs = Input([size, size, channels], name='input')
 
     x_8, x = DarknetTiny(name='yolo_darknet')(x)
 
@@ -286,9 +288,11 @@ def YoloLoss(anchors, classes=80, ignore_thresh=0.5):
         # 4. calculate all masks
         obj_mask = tf.squeeze(true_obj, -1)
         # ignore false positive when iou is over threshold
-        true_box_flat = tf.boolean_mask(true_box, tf.cast(obj_mask, tf.bool))
-        best_iou = tf.reduce_max(broadcast_iou(
-            pred_box, true_box_flat), axis=-1)
+        best_iou = tf.map_fn(
+            lambda x: tf.reduce_max(broadcast_iou(x[0], tf.boolean_mask(
+                x[1], tf.cast(x[2], tf.bool))), axis=-1),
+            (pred_box, true_box, obj_mask),
+            tf.float32)
         ignore_mask = tf.cast(best_iou < ignore_thresh, tf.float32)
 
         # 5. calculate all losses

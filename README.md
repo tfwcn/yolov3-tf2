@@ -1,5 +1,7 @@
 # YoloV3 Implemented in TensorFlow 2.0
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/zzh8829/yolov3-tf2/blob/master/colab_gpu.ipynb)
+
 This repo provides a clean implementation of YoloV3 in TensorFlow 2.0 using all the best practices.
 
 ## Key Features
@@ -28,17 +30,32 @@ This repo provides a clean implementation of YoloV3 in TensorFlow 2.0 using all 
 
 ### Installation
 
+#### Conda (Recommended)
+
+```bash
+# Tensorflow CPU
+conda env create -f conda-cpu.yml
+conda activate yolov3-tf2-cpu
+
+# Tensorflow GPU
+conda env create -f conda-gpu.yml
+conda activate yolov3-tf2-gpu
+```
+
 #### Pip
 
 ```bash
 pip install -r requirements.txt
 ```
 
-#### Conda
+### Nvidia Driver (For GPU)
 
 ```bash
-conda env create -f environment.yml
-conda activate yolov3-tf2
+# Ubuntu 18.04
+sudo apt-add-repository -r ppa:graphics-drivers/ppa
+sudo apt install nvidia-driver-430
+# Windows/Other
+https://www.nvidia.com/Download/index.aspx
 ```
 
 ### Convert pre-trained Darknet weights
@@ -67,15 +84,21 @@ python detect_video.py --video 0
 
 # video file
 python detect_video.py --video path_to_file.mp4 --weights ./checkpoints/yolov3-tiny.tf --tiny
+
+# video file with output
+python detect_video.py --video path_to_file.mp4 --output ./output.avi
 ```
 
 ### Training
 
-You need to generate tfrecord following the TensorFlow Object Detection API.
+I have created a complete tutorial on how to train from scratch using the VOC2012 Dataset.
+See the documentation here https://github.com/zzh8829/yolov3-tf2/blob/master/docs/training_voc.md
+
+For customzied training, you need to generate tfrecord following the TensorFlow Object Detection API.
 For example you can use [Microsoft VOTT](https://github.com/Microsoft/VoTT) to generate such dataset.
 You can also use this [script](https://github.com/tensorflow/models/blob/master/research/object_detection/dataset_tools/create_pascal_tf_record.py) to create the pascal voc dataset.
 
-
+Example commend line arguments for training
 ``` bash
 python train.py --batch_size 8 --dataset ~/Data/voc2012.tfrecord --val_dataset ~/Data/voc2012_val.tfrecord --epochs 100 --mode eager_tf --transfer fine_tune
 
@@ -129,6 +152,14 @@ Numbers are obtained with rough calculations from `detect_video.py`
 | YoloV3      | 66ms    | 50ms    | 123ms   |
 | YoloV3-Tiny | 15ms    | 10ms    | 24ms    |
 
+### RTX 2070 (credit to @AnaRhisT94)
+
+| Detection   | 416x416 |
+|-------------|---------|
+| YoloV3 predict_on_batch     | 29-32ms    | 
+| YoloV3 predict_on_batch + TensorRT     | 22-28ms    | 
+
+
 Darknet version of YoloV3 at 416x416 takes 29ms on Titan X.
 Considering Titan X has about double the benchmark of Tesla M60,
 Performance-wise this implementation is pretty comparable.
@@ -149,7 +180,8 @@ When calling model(x) directly, we are executing the graph in eager mode. For
 `model.predict`, tf actually compiles the graph on the first run and then
 execute in graph mode. So if you are only running the model once, `model(x)` is
 faster since there is no compilation needed. Otherwise, `model.predict` or
-using exported SavedModel graph is much faster (by 2x).
+using exported SavedModel graph is much faster (by 2x). For non real-time usage,
+`model.predict_on_batch` is even faster as tested by @AnaRhisT94)
 
 ### GradientTape
 
@@ -208,6 +240,26 @@ the default threshold is 0.5 for both IOU and score, you can adjust them
 according to your need by setting `--yolo_iou_threshold` and
 `--yolo_score_threshold` flags
 
+### Maximum number of boxes
+
+By default there can be maximum 100 bounding boxes per image, 
+if for some reason you would like to have more boxes you can use the `--yolo_max_boxes` flag.
+
+### NAN Loss / Training Failed / Doesn't Converge 
+
+Many people including me have succeeded in training, so the code definitely works
+@LongxingTan in https://github.com/zzh8829/yolov3-tf2/issues/128 provided some of his insights summarized here:
+  
+  1. For nan loss, try to make learning rate smaller
+  2. Double check the format of your input data. Data input labelled by vott and labelImg is different. so make sure the input box is the right, and check carefully the format is `x1/width,y1/height,x2/width,y2/height` and **NOT** x1,y1,x2,y2, or x,y,w,h
+
+Make sure to visualize your custom dataset using this tool
+```
+python tools/visualize_dataset.py --classes=./data/voc2012.names
+```
+
+It will output one random image from your dataset with label to `output.jpg`
+Training definitely won't work if the rendered label doesn't look correct
 
 ## Command Line Args Reference
 
@@ -230,6 +282,23 @@ detect.py:
     (default: './data/girl.png')
   --output: path to output image
     (default: './output.jpg')
+  --[no]tiny: yolov3 or yolov3-tiny
+    (default: 'false')
+  --weights: path to weights file
+    (default: './checkpoints/yolov3.tf')
+  --num_classes: number of classes in the model
+    (default: '80')
+    (an integer)
+
+detect_video.py:
+  --classes: path to classes file
+    (default: './data/coco.names')
+  --video: path to input video (use 0 for cam)
+    (default: './data/video.mp4')
+  --output: path to output video (remember to set right codec for given format. e.g. XVID for .avi)
+    (default: None)
+  --output_format: codec used in VideoWriter when saving video to file
+    (default: 'XVID)
   --[no]tiny: yolov3 or yolov3-tiny
     (default: 'false')
   --weights: path to weights file
@@ -270,6 +339,12 @@ train.py:
   --weights: path to weights file
     (default: './checkpoints/yolov3.tf')
 ```
+
+## Change Log
+
+#### October 1, 2019
+
+- Updated to Tensorflow to v2.0.0 Release
 
 
 ## References
